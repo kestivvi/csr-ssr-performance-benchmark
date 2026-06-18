@@ -34,14 +34,14 @@ It provisions AWS Graviton infrastructure, deploys standardized benchmark applic
 ## Architecture
 
 ```text
-┌──────────────────┐          ┌──────────────────┐          ┌──────────────────┐
-│ Load Generator   │   k6     │ Application SUT  │ metrics  │ Monitoring Host  │
-│ EC2 / ARM64      │ ───────▶ │ EC2 / ARM64      │ ───────▶ │ Prometheus       │
-└──────────────────┘          └──────────────────┘          │ Grafana          │
-          ▲                            ▲                    └──────────────────┘
-          │                            │                              ▲
-          └────────────── mgr CLI ─────┴──────────────────────────────┘
-                    Python + Terraform + Ansible
+  +------------------+   k6    +------------------+  metrics +------------------+
+  | Load Generator   | ------> | Application SUT  | -------> | Monitoring Host  |
+  | EC2 / ARM64      |         | EC2 / ARM64      |          | Prometheus       |
+  +------------------+         +------------------+          | Grafana          |
+          ^                            ^                     +------------------+
+          |                            |                              ^
+          +--------- mgr CLI ----------+------------------------------+
+                Python + Terraform + Ansible
 ```
 
 ## Prerequisites
