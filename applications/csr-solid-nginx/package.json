@@ -1,0 +1,24 @@
+{
+  "name": "csr-solidjs",
+  "version": "0.0.0",
+  "description": "",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "solid-devtools": "0.34.5",
+    "typescript": "6.0.3",
+    "vite": "7.3.2",
+    "vite-plugin-solid": "2.11.12"
+  },
+  "dependencies": {
+    "@solidjs/router": "0.16.1",
+    "solid-js": "1.9.12"
+  }
+
+}

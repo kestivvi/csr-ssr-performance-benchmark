@@ -1,0 +1,7 @@
+---
+- name: Ping application servers
+  hosts: role_application_servers
+  gather_facts: false
+  tasks:
+    - name: Ping host
+      ansible.builtin.ping:

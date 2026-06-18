@@ -1,0 +1,9 @@
+test_type: load
+num_repetitions: 2
+
+load_options:
+  rps: 100
+  warmup: 30s
+  duration: 30s
+  after: 15s
+  vus: 100

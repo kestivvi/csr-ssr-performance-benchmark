@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    network_mode: host
+    volumes:
+      - /home/ec2-user/prometheus:/etc/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.enable-remote-write-receiver'
+      - '--enable-feature=native-histograms'
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    network_mode: host
+    volumes:
+      - /home/ec2-user/grafana:/var/lib/grafana
+      - /home/ec2-user/grafana-provisioning/datasources:/etc/grafana/provisioning/datasources
+      - /home/ec2-user/grafana-provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - /home/ec2-user/grafana-dashboards:/var/lib/grafana/dashboards
+    user: "1000:1000" 

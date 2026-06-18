@@ -1,0 +1,116 @@
+---
+# ansible/ops/test_load_run.yml
+#
+# This playbook runs a single k6 LOAD test on a target load generator.
+# It is designed to be called by an external orchestrator script, which
+# must provide all necessary variables via --extra-vars.
+
+# Play 2: Run the test on the remote load generator
+- name: Run k6 Load Test on a Single Generator
+  hosts: "{{ target_host_group }}"
+  become: true
+  gather_facts: false
+
+  vars:
+    # --- Required variables to be passed by the orchestrator ---
+    target_host_group: "undefined"
+    target_url: "undefined"
+    server_type: "undefined"
+    prometheus_url: "undefined"
+    k6_rate: 100
+    k6_duration: "5m"
+    max_vus: 200
+    k6_path_type: "dynamic" # 'static' or 'dynamic'
+    k6_request_timeout: "0.4s"
+    k6_scenario: "load_test"
+    k6_timeout_seconds: 3600 # Fallback high timeout
+
+    # --- Standardized variables (MUST MATCH teardown playbook) ---
+    local_k6_script_path: "../../../k6/script.js"
+    remote_temp_script_path: "/tmp/script.js"
+    remote_temp_extract_path: "/tmp/extract.js"
+    container_name: "k6_run_{{ server_type | lower | replace('-', '_') }}"
+    remote_state_file: "/tmp/k6_state_{{ server_type | lower | replace('-', '_') }}.json"
+
+  tasks:
+    - name: Ensure any previous k6 test container is stopped and removed
+      ansible.builtin.command: "docker rm -f {{ container_name }}"
+      register: docker_rm_result
+      failed_when: "docker_rm_result.rc != 0 and 'No such container' not in docker_rm_result.stderr"
+      changed_when: "docker_rm_result.rc == 0"
+
+    - name: Get start timestamp on remote host
+      ansible.builtin.command: "date +%s"
+      register: start_timestamp_result
+      changed_when: false
+
+    - name: Create remote state file for graceful shutdown
+      ansible.builtin.copy:
+        content: '{"start_time": {{ start_timestamp_result.stdout }} }'
+        dest: "{{ remote_state_file }}"
+        mode: "0644"
+
+    - name: Run k6 test by mounting the script file directly
+      # noqa: command-instead-of-shell
+      ansible.builtin.shell: >-
+        docker run --rm
+        --name {{ container_name }}
+        --network host
+        --ulimit nofile=250000:250000
+        --volume {{ remote_temp_script_path }}:/test/script.js:ro,z
+        --volume {{ remote_temp_extract_path }}:/test/extract.js:ro,z
+        -e K6_SCENARIO="{{ k6_scenario }}"
+        -e SERVER_TYPE="{{ server_type | upper }}"
+        -e TARGET_URL="{{ target_url }}"
+        -e K6_TEST_PATH="{{ k6_path_type }}"
+        -e K6_RATE="{{ k6_rate | string }}"
+        -e SCRIPT_DURATION="{{ k6_duration }}"
+        -e MAX_VUS="{{ max_vus }}"
+        -e TIMEOUT="{{ k6_request_timeout }}"
+        -e K6_PROMETHEUS_RW_SERVER_URL="{{ prometheus_url }}/api/v1/write"
+        -e K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM="false"
+        -e K6_SKIP_ASSETS="{{ k6_skip_assets | default('false') | string | lower }}"
+        -e K6_SLIM_METRICS="{{ k6_slim_metrics | default('false') | string | lower }}"
+        -e K6_NO_USAGE_REPORT="true"
+        -e K6_PROMETHEUS_RW_TREND_STATS="p(99),avg,count"
+        -e K6_PROMETHEUS_RW_STALENESS_DELTA="30s"
+        -e K6_LOG_OUTPUT="stdout"
+        -e K6_BACKOFF_TIMEOUT_S="{{ k6_backoff_timeout_s | default(omit) }}"
+        -e K6_BACKOFF_5XX_S="{{ k6_backoff_5xx_s | default(omit) }}"
+        grafana/k6:latest
+        run
+        --compatibility-mode=base
+        --insecure-skip-tls-verify
+        --out experimental-prometheus-rw
+        --tag "server={{ server_type | upper }}"
+        /test/script.js
+        > /tmp/k6.log 2>&1
+      register: k6_run_result
+      changed_when: true
+      timeout: "{{ k6_timeout_seconds | int }}"
+
+    - name: Get end timestamp on remote host
+      ansible.builtin.command: "date +%s"
+      register: end_timestamp_result
+      changed_when: false
+
+    - name: Output precise timestamps for orchestrator
+      ansible.builtin.debug:
+        msg: 'ORCHESTRATOR_TIMESTAMPS::{"start": {{ start_timestamp_result.stdout }}, "end": {{ end_timestamp_result.stdout }}}'
+
+    - name: Fetch k6 logs
+      ansible.builtin.fetch:
+        src: /tmp/k6.log
+        dest: "{{ k6_log_path }}"
+        flat: yes
+      when: k6_log_path is defined
+
+    - name: Clean up the remote state file on successful completion
+      ansible.builtin.file:
+        path: "{{ remote_state_file }}"
+        state: absent
+
+    - name: Clean up the remote log file
+      ansible.builtin.file:
+        path: /tmp/k6.log
+        state: absent

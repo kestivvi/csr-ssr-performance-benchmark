@@ -1,0 +1,113 @@
+import datetime
+import shutil
+from pathlib import Path
+from typing import List, Optional
+
+import yaml
+from rich.console import Console
+
+from orchestrator.shared.research import Experiment, ExperimentLoader, ResearchArtifact
+
+from .reports.capacity_k6 import run_capacity_k6_analysis
+from .reports.capacity_wrk import run_capacity_wrk_analysis
+from .reports.champions import run_champions_analysis
+from .reports.load import run_load_analysis
+
+console = Console()
+
+
+class PerformanceAnalyzer:
+    def __init__(
+        self,
+        input_dir: Path,
+        report_type: str,
+        champions: Optional[List[str]] = None,
+        force: bool = False,
+        skip_first_sample: bool = False,
+    ):
+        self.input_dir = input_dir
+        self.report_type = report_type
+        self.champions_list = champions or []
+        self.force = force
+        self.skip_first_sample = skip_first_sample
+
+        # Create timestamped output directory
+        ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        self.output_dir = self.input_dir / f"analysis_{ts}"
+        self.plots_dir = self.output_dir / "plots"
+
+        report_names = {
+            "capacity_k6": "capacity_report_k6.md",
+            "capacity_wrk": "capacity_report_wrk.md",
+            "champions": "champions_report.md",
+        }
+        self.report_path = self.output_dir / report_names.get(
+            self.report_type, f"report_{self.report_type}.md"
+        )
+
+        self.families: List[str] = []
+        self.runtime_priority: List[str] = []
+        self.experiment: Optional[Experiment] = None
+
+    def run(self) -> None:
+        console.print(f"[bold cyan]Starting analysis for:[/bold cyan] {self.input_dir}")
+
+        if not self.input_dir.exists():
+            console.print(
+                f"[bold red]Error: Input directory does not exist:[/bold red] {self.input_dir}"
+            )
+            return
+
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.plots_dir.mkdir(parents=True, exist_ok=True)
+
+        if not self._load_configuration():
+            console.print("[bold red]Analysis aborted: Configuration loading failed.[/bold red]")
+            return
+
+        # Use the deep Research Artifact
+        artifact = ResearchArtifact(self.input_dir)
+
+        # Consistency Guard (Strict on Export)
+        if not artifact.is_consistent:
+            console.print("[bold yellow]WARNING: Research Artifact is inconsistent.[/bold yellow]")
+            for warning in artifact.warnings:
+                console.print(f"  - {warning}")
+
+            if not self.force:
+                console.print("[bold red]Analysis aborted: Research Contract violated.[/bold red]")
+                console.print("Use --force to analyze inconsistent data.")
+                return
+
+        loader = ExperimentLoader()
+        try:
+            self.experiment = loader.load(artifact)
+        except Exception as e:
+            console.print(f"[bold red]Failed to load experiment data:[/bold red] {e}")
+            return
+
+        if self.report_type == "capacity_wrk":
+            run_capacity_wrk_analysis(self)
+        elif self.report_type == "capacity_k6":
+            run_capacity_k6_analysis(self)
+        elif self.report_type == "load":
+            run_load_analysis(self)
+        elif self.report_type == "champions":
+            run_champions_analysis(self)
+
+        console.print(
+            f"[bold green]Analysis complete. Report saved to: {self.report_path}[/bold green]"
+        )
+
+    def _load_configuration(self) -> bool:
+        config_path = Path(__file__).parent / "config.yaml"
+        try:
+            with open(config_path, "r") as f:
+                config_data = yaml.safe_load(f)
+                self.families = config_data.get("families", [])
+                self.runtime_priority = config_data.get("runtime_priority", [])
+            shutil.copy(config_path, self.output_dir / "config.yaml")
+            return True
+        except Exception as e:
+            console.print(f"[bold red]Failed to load configuration:[/bold red] {e}")
+            return False

@@ -1,0 +1,30 @@
+# This file defines analytical groups and chart ordering for the performance analysis.
+# The analyzer transforms aggregated data into statistical reports and plots.
+
+# 'families' defines the order of framework ecosystems from most to least performant.
+# Each entry is a list of keywords; an application matching ANY keyword belongs to that family.
+# Strategy: CSR/SSR hybrid families first, SSR-only families at the end.
+families:
+  - [vanilla]
+  - [solid]
+  - [svelte]
+  - [lit]
+  - [vue, nuxt]
+  - [react, nextjs, tanstack-start-react]
+  - [angular, analog]
+  - [qwik]         # SSR only
+  - [astro]        # SSR only
+  - [react-router] # SSR only
+  - [fresh]        # SSR only
+
+# 'runtime_priority' defines the internal order within a family.
+runtime_priority:
+  - static
+  - apache
+  - nginx
+  - export
+  - bun
+  - node
+
+groups: {}
+chart_order: []
